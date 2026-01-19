@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: openlake
+      POSTGRES_USER: openlake
+      POSTGRES_DB: openlake
+    ports: ["5432:5432"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openlake -d openlake"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    profiles: ["minio"]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: openlake
+      MINIO_ROOT_PASSWORD: openlakepass
+    ports: ["9000:9000", "9001:9001"]
+
+
+  redpanda:
+    image: redpandadata/redpanda:v24.2.7
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - "1G"
+      - --reserve-memory
+      - "0M"
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
+    ports: ["9092:9092"]
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    environment:
+      DATABASE_URL: postgresql://openlake:openlake@postgres:5432/openlake
+    ports: ["8000:8000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ui:
+    build:
+      context: .
+      dockerfile: ui/Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:8000
+      OPENLAKE_API_INTERNAL: http://api:8000
+
+    ports: ["3000:3000"]
+    depends_on:
+      - api
